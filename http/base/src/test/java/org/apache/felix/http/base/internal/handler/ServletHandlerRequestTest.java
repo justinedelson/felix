@@ -18,7 +18,6 @@ package org.apache.felix.http.base.internal.handler;
 
 import org.mockito.Mockito;
 import org.osgi.service.http.HttpContext;
-import org.junit.After;
 import org.junit.Test;
 import org.junit.Assert;
 import org.junit.Before;
