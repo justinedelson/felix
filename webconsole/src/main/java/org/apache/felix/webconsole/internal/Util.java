@@ -148,13 +148,6 @@ public class Util
     {
         Arrays.sort( bundles, BUNDLE_NAME_COMPARATOR );
     }
-    /**
-     * This is a no-op for now.
-     */
-    public static void sort( ServiceReference[] services )
-    {
-        // Arrays.sort( bundles, BUNDLE_NAME_COMPARATOR );
-    }
 
     // ---------- inner classes ------------------------------------------------
 

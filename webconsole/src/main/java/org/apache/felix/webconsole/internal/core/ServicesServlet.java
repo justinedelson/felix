@@ -5,15 +5,14 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.text.MessageFormat;
-import java.util.Date;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.felix.webconsole.ConfigurationPrinter;
+import org.apache.felix.webconsole.WebConsoleConstants;
 import org.apache.felix.webconsole.internal.BaseWebConsolePlugin;
-import org.apache.felix.webconsole.internal.Logger;
 import org.apache.felix.webconsole.internal.Util;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -30,13 +29,61 @@ import org.osgi.service.log.LogService;
 public class ServicesServlet extends BaseWebConsolePlugin implements
         ConfigurationPrinter {
 
+    private final class RequestInfo {
+        public final String extension;
+        public final ServiceReference service;
+        public final boolean serviceRequested;
+        public final String pathInfo;
+
+        protected RequestInfo(final HttpServletRequest request) {
+            String info = request.getPathInfo();
+            // remove label and starting slash
+            info = info.substring(getLabel().length() + 1);
+
+            // get extension
+            if (info.endsWith(".json")) {
+                extension = "json";
+                info = info.substring(0, info.length() - 5);
+            } else {
+                extension = "html";
+            }
+
+            // we only accept direct requests to a service if they have a slash
+            // after the label
+            String serviceInfo = null;
+            if (info.startsWith("/")) {
+                serviceInfo = info.substring(1);
+            }
+            if (serviceInfo == null || serviceInfo.length() == 0) {
+                service = null;
+                serviceRequested = false;
+                pathInfo = null;
+            } else {
+                service = getServiceById(serviceInfo);
+                serviceRequested = true;
+                pathInfo = serviceInfo;
+            }
+            request.setAttribute(ServicesServlet.class.getName(), this);
+        }
+
+    }
+
+    public static RequestInfo getRequestInfo(final HttpServletRequest request) {
+        return (RequestInfo) request.getAttribute(ServicesServlet.class
+                .getName());
+    }
+
+    private ServiceRegistration configurationPrinter;
+
+    public static final String LABEL = "services";
+
+    public static final String TITLE = "Services";
+
     public void activate(BundleContext bundleContext) {
         super.activate(bundleContext);
         configurationPrinter = bundleContext.registerService(
                 ConfigurationPrinter.SERVICE, this, null);
     }
-
-    private ServiceRegistration configurationPrinter;
 
     public void deactivate() {
         if (configurationPrinter != null) {
@@ -47,167 +94,12 @@ public class ServicesServlet extends BaseWebConsolePlugin implements
         super.deactivate();
     }
 
-    public static final String LABEL = "services";
-
-    public static final String TITLE = "Services";
-
     public String getLabel() {
         return LABEL;
     }
 
     public String getTitle() {
         return TITLE;
-    }
-
-    protected void renderContent(HttpServletRequest req, HttpServletResponse res)
-            throws ServletException, IOException {
-        // TODO Auto-generated method stub
-
-    }
-
-    private void appendServiceInfoCount(final StringBuffer buf, String msg,
-            int count) {
-        buf.append(count);
-        buf.append(" service");
-        if (count != 1)
-            buf.append('s');
-        buf.append(' ');
-        buf.append(msg);
-    }
-
-    private String getStatusLine(final ServiceReference[] services) {
-        final StringBuffer buffer = new StringBuffer();
-        buffer.append("Services information: ");
-        appendServiceInfoCount(buffer, "in total", services.length);
-        return buffer.toString();
-    }
-
-    private void writeJSON(final Writer pw, final ServiceReference service,
-            final String pluginRoot, final boolean fullDetails)
-            throws IOException {
-        final ServiceReference[] allServices = this.getServices();
-        final String statusLine = this.getStatusLine(allServices);
-        final ServiceReference[] services = (service != null) ? new ServiceReference[] { service }
-                : allServices;
-        Util.sort(services);
-
-        final JSONWriter jw = new JSONWriter(pw);
-
-        try {
-            jw.object();
-
-            jw.key("status");
-            jw.value(statusLine);
-
-            jw.key("data");
-
-            jw.array();
-
-            for (int i = 0; i < services.length; i++) {
-                serviceInfo(jw, services[i], fullDetails || service != null,
-                        pluginRoot);
-            }
-
-            jw.endArray();
-
-            jw.endObject();
-
-        } catch (JSONException je) {
-            throw new IOException(je.toString());
-        }
-
-    }
-
-    private void serviceInfo(JSONWriter jw, ServiceReference service,
-            boolean details, final String pluginRoot) throws JSONException {
-        jw.object();
-        jw.key("id");
-        jw.value(propertyAsString(service, Constants.SERVICE_ID));
-        jw.key("types");
-        jw.value(propertyAsString(service, Constants.OBJECTCLASS));
-        jw.key("pid");
-        jw.value(propertyAsString(service, Constants.SERVICE_PID));
-
-        Bundle bundle = service.getBundle();
-
-        jw.key("bundleId");
-        jw.value(bundle.getBundleId());
-        jw.key("bundleName");
-        jw.value(Util.getName(bundle));
-        jw.key("bundleVersion");
-        jw.value(Util.getHeaderValue(bundle, Constants.BUNDLE_VERSION));
-        jw.key("bundleSymbolicName");
-        jw.value(Util.getHeaderValue(bundle, Constants.BUNDLE_SYMBOLICNAME));
-
-        jw.key("actions");
-        jw.array();
-
-        jw.endArray();
-
-        if (details) {
-            serviceDetails(jw, service, pluginRoot);
-        }
-
-        jw.endObject();
-    }
-    
-
-    private void keyVal( JSONWriter jw, String key, Object value ) throws JSONException
-    {
-        if ( key != null && value != null )
-        {
-            jw.object();
-            jw.key( "key" );
-            jw.value( key );
-            jw.key( "value" );
-            jw.value( value );
-            jw.endObject();
-        }
-    }
-
-    private void serviceDetails(JSONWriter jw, ServiceReference service,
-            String pluginRoot) throws JSONException {
-        String[] keys = service.getPropertyKeys();
-
-        jw.key("props");
-        jw.array();
-        
-        for (int i = 0; i < keys.length; i++) {
-            String key = keys[i];
-            keyVal(jw, key, service.getProperty(key));
-            
-        }
-       
-        jw.endArray();
-
-    }
-
-    private String propertyAsString(ServiceReference ref, String name) {
-        Object value = ref.getProperty(name);
-        if (value instanceof Object[]) {
-            StringBuffer dest = new StringBuffer();
-            Object[] values = (Object[]) value;
-            for (int j = 0; j < values.length; j++) {
-                if (j > 0)
-                    dest.append(", ");
-                dest.append(values[j]);
-            }
-            return dest.toString();
-        } else if (value != null) {
-            return value.toString();
-        } else {
-            return "n/a";
-        }
-    }
-
-    private ServiceReference[] getServices() {
-        try {
-            return getBundleContext().getServiceReferences(null, null);
-        } catch (InvalidSyntaxException e) {
-            getLog().log(LogService.LOG_WARNING,
-                    "Unable to access service reference list.", e);
-            return new ServiceReference[0];
-        }
     }
 
     public void printConfiguration(PrintWriter pw) {
@@ -229,6 +121,12 @@ public class ServicesServlet extends BaseWebConsolePlugin implements
                             "Service {0} - {1} (pid: {2})", new Object[] {
                                     service.get("id"), service.get("types"),
                                     service.get("pid") }));
+                    pw.println(MessageFormat.format(
+                            "  from Bundle ID {0} - {1} ({2}), version {3}",
+                            new Object[] { service.get("bundleId"),
+                                    service.get("bundleName"),
+                                    service.get("bundleSymbolicName"),
+                                    service.get("bundleVersion") }));
 
                     JSONArray props = service.getJSONArray("props");
                     for (int pi = 0; pi < props.length(); pi++) {
@@ -265,4 +163,236 @@ public class ServicesServlet extends BaseWebConsolePlugin implements
         }
     }
 
+    private void appendServiceInfoCount(final StringBuffer buf, String msg,
+            int count) {
+        buf.append(count);
+        buf.append(" service");
+        if (count != 1)
+            buf.append('s');
+        buf.append(' ');
+        buf.append(msg);
+    }
+
+    private ServiceReference getServiceById(String pathInfo) {
+        // only use last part of the pathInfo
+        pathInfo = pathInfo.substring(pathInfo.lastIndexOf('/') + 1);
+
+        StringBuffer filter = new StringBuffer();
+        filter.append("(").append(Constants.SERVICE_ID).append("=");
+        filter.append(pathInfo).append(")");
+        String filterStr = filter.toString();
+        try {
+            ServiceReference[] refs = getBundleContext().getServiceReferences(
+                    null, filterStr);
+            if (refs == null || refs.length != 1) {
+                return null;
+            }
+            return refs[0];
+        } catch (InvalidSyntaxException e) {
+            getLog().log(LogService.LOG_WARNING,
+                    "Unable to search for services using filter " + filterStr,
+                    e);
+            // this shouldn't happen
+            return null;
+        }
+    }
+
+    private ServiceReference[] getServices() {
+        try {
+            return getBundleContext().getServiceReferences(null, null);
+        } catch (InvalidSyntaxException e) {
+            getLog().log(LogService.LOG_WARNING,
+                    "Unable to access service reference list.", e);
+            return new ServiceReference[0];
+        }
+    }
+
+    private String getStatusLine(final ServiceReference[] services) {
+        final StringBuffer buffer = new StringBuffer();
+        buffer.append("Services information: ");
+        appendServiceInfoCount(buffer, "in total", services.length);
+        return buffer.toString();
+    }
+
+    private void keyVal(JSONWriter jw, String key, Object value)
+            throws JSONException {
+        if (key != null && value != null) {
+            jw.object();
+            jw.key("key");
+            jw.value(key);
+            jw.key("value");
+            jw.value(value);
+            jw.endObject();
+        }
+    }
+
+    private String propertyAsString(ServiceReference ref, String name) {
+        Object value = ref.getProperty(name);
+        if (value instanceof Object[]) {
+            StringBuffer dest = new StringBuffer();
+            Object[] values = (Object[]) value;
+            for (int j = 0; j < values.length; j++) {
+                if (j > 0)
+                    dest.append(", ");
+                dest.append(values[j]);
+            }
+            return dest.toString();
+        } else if (value != null) {
+            return value.toString();
+        } else {
+            return "n/a";
+        }
+    }
+
+    private void renderJSON(final HttpServletResponse response,
+            final ServiceReference service, final String pluginRoot)
+            throws IOException {
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+
+        final PrintWriter pw = response.getWriter();
+        writeJSON(pw, service, pluginRoot);
+    }
+
+    private void serviceDetails(JSONWriter jw, ServiceReference service,
+            String pluginRoot) throws JSONException {
+        String[] keys = service.getPropertyKeys();
+
+        jw.key("props");
+        jw.array();
+
+        for (int i = 0; i < keys.length; i++) {
+            String key = keys[i];
+            if (Constants.SERVICE_PID.equals(key)) {
+                keyVal(jw, "Service PID", service.getProperty(key));
+            } else if (Constants.SERVICE_DESCRIPTION.equals(key)) {
+                keyVal(jw, "Service Description", service.getProperty(key));
+            } else if (Constants.SERVICE_VENDOR.equals(key)) {
+                keyVal(jw, "Service Vendor", service.getProperty(key));
+            } else if (Constants.OBJECTCLASS.equals(key) || Constants.SERVICE_ID.equals(key)) {
+            } else {
+                keyVal(jw, key, service.getProperty(key));
+            }
+
+        }
+
+        jw.endArray();
+
+    }
+
+    private void serviceInfo(JSONWriter jw, ServiceReference service,
+            boolean details, final String pluginRoot) throws JSONException {
+        jw.object();
+        jw.key("id");
+        jw.value(propertyAsString(service, Constants.SERVICE_ID));
+        jw.key("types");
+        jw.value(propertyAsString(service, Constants.OBJECTCLASS));
+        jw.key("pid");
+        jw.value(propertyAsString(service, Constants.SERVICE_PID));
+
+        Bundle bundle = service.getBundle();
+
+        jw.key("bundleId");
+        jw.value(bundle.getBundleId());
+        jw.key("bundleName");
+        jw.value(Util.getName(bundle));
+        jw.key("bundleVersion");
+        jw.value(Util.getHeaderValue(bundle, Constants.BUNDLE_VERSION));
+        jw.key("bundleSymbolicName");
+        jw.value(Util.getHeaderValue(bundle, Constants.BUNDLE_SYMBOLICNAME));
+
+        if (details) {
+            serviceDetails(jw, service, pluginRoot);
+        }
+
+        jw.endObject();
+    }
+
+    private void writeJSON(final PrintWriter pw,
+            final ServiceReference service, final String pluginRoot)
+            throws IOException {
+        writeJSON(pw, service, pluginRoot, false);
+    }
+
+    private void writeJSON(final Writer pw, final ServiceReference service,
+            final String pluginRoot, final boolean fullDetails)
+            throws IOException {
+        final ServiceReference[] allServices = this.getServices();
+        final String statusLine = this.getStatusLine(allServices);
+        final ServiceReference[] services = (service != null) ? new ServiceReference[] { service }
+                : allServices;
+
+        final JSONWriter jw = new JSONWriter(pw);
+
+        try {
+            jw.object();
+
+            jw.key("status");
+            jw.value(statusLine);
+
+            jw.key("data");
+
+            jw.array();
+
+            for (int i = 0; i < services.length; i++) {
+                serviceInfo(jw, services[i], fullDetails || service != null,
+                        pluginRoot);
+            }
+
+            jw.endArray();
+
+            jw.endObject();
+
+        } catch (JSONException je) {
+            throw new IOException(je.toString());
+        }
+
+    }
+
+    protected void doGet(HttpServletRequest request,
+            HttpServletResponse response) throws ServletException, IOException {
+        final RequestInfo reqInfo = new RequestInfo(request);
+        if (reqInfo.service == null && reqInfo.serviceRequested) {
+            response.sendError(404);
+            return;
+        }
+        if (reqInfo.extension.equals("json")) {
+            final String pluginRoot = (String) request
+                    .getAttribute(WebConsoleConstants.ATTR_PLUGIN_ROOT);
+            this.renderJSON(response, reqInfo.service, pluginRoot);
+
+            // nothing more to do
+            return;
+        }
+
+        super.doGet(request, response);
+    }
+
+    protected void renderContent(HttpServletRequest request,
+            HttpServletResponse response) throws ServletException, IOException {
+        // get request info from request attribute
+        final RequestInfo reqInfo = getRequestInfo(request);
+        final PrintWriter pw = response.getWriter();
+
+        final String appRoot = (String) request
+                .getAttribute(WebConsoleConstants.ATTR_APP_ROOT);
+
+        Util.startScript(pw);
+        pw.println("var imgRoot = '" + appRoot + "/res/imgs';");
+        pw.println("var bundlePath = '" + appRoot + "/" + BundlesServlet.NAME + "/" + "';");
+        pw.println("var drawDetails = " + reqInfo.serviceRequested + ";");
+        Util.endScript(pw);
+
+        Util.script(pw, appRoot, "services.js");
+
+        pw.println("<div id='plugin_content'/>");
+        Util.startScript(pw);
+        pw.print("renderServices(");
+        final String pluginRoot = (String) request
+                .getAttribute(WebConsoleConstants.ATTR_PLUGIN_ROOT);
+        writeJSON(pw, reqInfo.service, pluginRoot);
+        pw.println(");");
+        Util.endScript(pw);
+
+    }
 }
