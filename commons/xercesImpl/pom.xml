@@ -28,7 +28,7 @@
 
     <properties>
         <pkgArtifactId>xercesImpl</pkgArtifactId>
-        <pkgVersion>2.8.1</pkgVersion>
+        <pkgVersion>2.12.0</pkgVersion>
         <pomVersion>0001</pomVersion>
         <osgiVersion>${pkgVersion}</osgiVersion>
     </properties>
