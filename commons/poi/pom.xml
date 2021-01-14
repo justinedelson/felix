@@ -28,7 +28,7 @@
 
   <properties>
     <pkgArtifactId>poi</pkgArtifactId>
-    <pkgVersion>3.0.1-FINAL</pkgVersion>
+    <pkgVersion>3.17</pkgVersion>
     <pomVersion>0002</pomVersion>
     <osgiVersion>${pkgVersion}</osgiVersion>
   </properties>
